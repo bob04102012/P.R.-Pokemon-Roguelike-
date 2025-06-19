@@ -174,7 +174,7 @@
                     }
                 }
             }
-
+            
             function showChoiceModal(title, choices, type) {
                 modalOverlay.classList.remove('hidden');
                 modalTitle.textContent = title;
@@ -195,6 +195,22 @@
                 });
             }
 
+            function showShopModal(shopData) {
+                modalOverlay.classList.remove('hidden');
+                modalTitle.textContent = "Poké Mart - Permanent Upgrades";
+                choicesContainer.innerHTML = '';
+                for (const id in shopData.upgrades) {
+                    const upgrade = shopData.upgrades[id];
+                    const card = document.createElement('div');
+                    card.className = 'choice-card';
+                    card.innerHTML = `<div class="upgrade-info"><h3>${upgrade.name}</h3><p>${upgrade.description}</p></div><div class="upgrade-cost">$P ${upgrade.cost}</div>`;
+                    if (playerState.upgrades.purchased.includes(id)) { card.classList.add('purchased'); card.innerHTML += ' (Purchased)'; } 
+                    else if (playerState.currency < upgrade.cost) { card.classList.add('purchased'); } 
+                    else { card.onclick = () => { socket.emit('buyUpgrade', id); modalOverlay.classList.add('hidden'); }; }
+                    choicesContainer.appendChild(card);
+                }
+            }
+
             socket.on('connect', () => { selfId = socket.id; });
             socket.on('enterHubMode', (data) => {
                 playerState = data.playerState;
@@ -202,21 +218,25 @@
                 switchUI('hub');
                 renderHubUI();
                 drawMap();
+                challengeBtn.disabled = false;
+                challengeBtn.textContent = 'Find Battle';
             });
             socket.on('updatePlayerState', (newPlayerState) => { playerState = newPlayerState; renderHubUI(); });
-            socket.on('gameStart', (newGameState) => { gameState = newGameState; switchUI('pvpBattle'); renderBattleUI(); messageLog.innerHTML = `A challenger appears! Battle Start!`; });
+            socket.on('gameStart', (newGameState) => { gameState = newGameState; switchUI('pvpBattle'); renderBattleUI(); });
             socket.on('updateGameState', (newGameState) => { gameState = newGameState; renderBattleUI(); });
-            socket.on('logMessage', (msg) => { messageLog.innerHTML = msg; });
+            socket.on('logMessage', (msg) => { if(uiState.includes('Battle')) { messageLog.innerHTML = msg; } });
             socket.on('promptChoice', ({ title, choices, type }) => { showChoiceModal(title, choices, type); });
             socket.on('updateMap', (data) => { mapData = data; drawMap(); });
             socket.on('updateQueueStatus', ({ inQueue }) => {
                 challengeBtn.disabled = inQueue;
                 challengeBtn.textContent = inQueue ? 'Waiting...' : 'Find Battle';
             });
+            socket.on('shopData', (data) => { showShopModal(data); });
             socket.on('opponentDisconnected', () => { alert("Opponent disconnected. Returning to Hub."); enterHubMode(selfId); });
             
             challengeBtn.addEventListener('click', () => socket.emit('enterChallengeQueue'));
-            shopBtn.addEventListener('click', () => { /* Add shop modal logic here */ });
+            shopBtn.addEventListener('click', () => socket.emit('getShopData'));
+            modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) modalOverlay.classList.add('hidden'); });
             
             window.addEventListener('keydown', (e) => {
                 if (uiState !== 'hub') return;
@@ -224,7 +244,7 @@
                 if (['e', 'enter'].includes(key)) {
                     const tile = mapData.grid[mapData.location.y][mapData.location.x];
                     if (tile === 4) challengeBtn.click();
-                    if (tile === 5) { /* Add shop modal logic here */ }
+                    if (tile === 5) shopBtn.click();
                     if (tile === 6) socket.emit('healParty');
                 }
                 if (['w', 'a', 's', 'd'].includes(key)) {
