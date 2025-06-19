@@ -99,12 +99,9 @@
 
             const spriteCanvas = document.createElement('canvas');
             spriteCanvas.width = 8; spriteCanvas.height = 8;
-            let seed = 0;
-            function seededRandom() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; }
-            function stringToSeed(str) { let h = 1779033703, i, c; for (i = 0; i < str.length; i++) { c = str.charCodeAt(i); h = Math.imul(h ^ c, 2654435761); } return (h ^ h >>> 16) >>> 0; }
             function generatePokemonImage(name) {
                 if(!name) return '';
-                const ctx = spriteCanvas.getContext('2d'); seed = stringToSeed(name); ctx.clearRect(0, 0, 8, 8); const mainHue = Math.floor(seededRandom() * 360); const mainColor = `hsl(${mainHue}, 70%, 50%)`, shadowColor = `hsl(${mainHue}, 70%, 30%)`; for (let y = 0; y < 8; y++) { for (let x = 0; x < 4; x++) { if (seededRandom() > 0.4) { ctx.fillStyle = (y > 4 && seededRandom() > 0.3) ? shadowColor : mainColor; ctx.fillRect(x, y, 1, 1); ctx.fillRect(7 - x, y, 1, 1); } } } const eyeY = Math.floor(seededRandom() * 2) + 2; ctx.fillStyle = "white"; ctx.fillRect(2, eyeY, 1, 1); ctx.fillRect(5, eyeY, 1, 1); return spriteCanvas.toDataURL();
+                const ctx = spriteCanvas.getContext('2d'); let seed = 0; function seededRandom() { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; } function stringToSeed(str) { let h = 1779033703, i, c; for (i = 0; i < str.length; i++) { c = str.charCodeAt(i); h = Math.imul(h ^ c, 2654435761); } return (h ^ h >>> 16) >>> 0; } seed = stringToSeed(name); ctx.clearRect(0, 0, 8, 8); const mainHue = Math.floor(seededRandom() * 360); const mainColor = `hsl(${mainHue}, 70%, 50%)`, shadowColor = `hsl(${mainHue}, 70%, 30%)`; for (let y = 0; y < 8; y++) { for (let x = 0; x < 4; x++) { if (seededRandom() > 0.4) { ctx.fillStyle = (y > 4 && seededRandom() > 0.3) ? shadowColor : mainColor; ctx.fillRect(x, y, 1, 1); ctx.fillRect(7 - x, y, 1, 1); } } } const eyeY = Math.floor(seededRandom() * 2) + 2; ctx.fillStyle = "white"; ctx.fillRect(2, eyeY, 1, 1); ctx.fillRect(5, eyeY, 1, 1); return spriteCanvas.toDataURL();
             }
 
             function switchUI(state) {
@@ -135,10 +132,68 @@
                 });
             }
             
-            function showShopModal() { /* ... Identical to previous version ... */ }
-            function showChoiceModal(title, choices, type) { /* ... Identical to previous version ... */ }
-            function renderBattleUI() { /* ... Identical to previous version ... */ }
-            function renderPlayerArea(prefix, playerData, isMyTurn) { /* ... Identical to previous version ... */ }
+            function renderBattleUI() {
+                if (!gameState) return;
+                const selfKey = gameState.players.player1.id === selfId ? 'player1' : 'player2';
+                const opponentKey = selfKey === 'player1' ? 'player2' : 'player1';
+                renderPlayerArea('self', gameState.players[selfKey], selfKey === gameState.turn);
+                renderPlayerArea('opponent', gameState.players[opponentKey], false);
+            }
+
+            function renderPlayerArea(prefix, playerData, isMyTurn) {
+                const partyDisplay = document.getElementById(`${prefix}-party-display`);
+                partyDisplay.innerHTML = '';
+                if (!playerData || !playerData.party) return;
+                playerData.party.forEach((mon, index) => {
+                    const monDiv = document.createElement('div');
+                    monDiv.className = 'party-mon';
+                    monDiv.innerHTML = `<img src="${generatePokemonImage(mon.name)}" title="${mon.name}"/>`;
+                    if (index === playerData.activePokemonIndex) monDiv.classList.add('active');
+                    if (mon.isFainted) monDiv.classList.add('fainted');
+                    partyDisplay.appendChild(monDiv);
+                });
+                if (playerData.party.length === 0) return;
+                const activeMon = playerData.party[playerData.activePokemonIndex];
+                if (!activeMon) return;
+                document.getElementById(`${prefix}-pokemon-name`).textContent = activeMon.name;
+                document.getElementById(`${prefix}-pokemon-img`).src = generatePokemonImage(activeMon.name);
+                document.getElementById(`${prefix}-health-bar`).style.width = `${(activeMon.currentHp / activeMon.maxHp) * 100}%`;
+                document.getElementById(`${prefix}-hp-text`).textContent = `${Math.ceil(activeMon.currentHp)} / ${activeMon.maxHp}`;
+                const movesContainer = document.getElementById(`${prefix}-moves`);
+                if (prefix === 'self' && movesContainer) {
+                    movesContainer.innerHTML = '';
+                    if (!activeMon.isFainted) {
+                        activeMon.moves.forEach((move, i) => {
+                            const btn = document.createElement('button');
+                            btn.textContent = move.name;
+                            btn.title = `Power: ${move.power} | Type: ${move.type}`;
+                            btn.disabled = !isMyTurn || gameState.phase !== 'battle';
+                            btn.onclick = () => socket.emit('chooseMove', { moveIndex: i });
+                            movesContainer.appendChild(btn);
+                        });
+                    }
+                }
+            }
+
+            function showChoiceModal(title, choices, type) {
+                modalOverlay.classList.remove('hidden');
+                modalTitle.textContent = title;
+                choicesContainer.innerHTML = '';
+                choices.forEach((choice) => {
+                    const card = document.createElement('div');
+                    card.className = 'choice-card';
+                    card.innerHTML = `<img src="${generatePokemonImage(choice.name)}" style="width:96px; height:96px;" /><h3>${choice.name}</h3><p>HP: ${Math.ceil(choice.currentHp)}/${choice.maxHp}</p>`;
+                    card.onclick = () => {
+                        if (type === 'forceSwitch') {
+                            const selfKey = gameState.players.player1.id === selfId ? 'player1' : 'player2';
+                            const originalIndex = gameState.players[selfKey].party.findIndex(p => p.name === choice.name && !p.isFainted);
+                            if (originalIndex !== -1) socket.emit('switchPokemon', { pokemonIndex: originalIndex });
+                        }
+                        modalOverlay.classList.add('hidden');
+                    };
+                    choicesContainer.appendChild(card);
+                });
+            }
 
             socket.on('connect', () => { selfId = socket.id; });
             socket.on('enterHubMode', (data) => {
@@ -147,27 +202,21 @@
                 switchUI('hub');
                 renderHubUI();
                 drawMap();
-                challengeBtn.disabled = false;
-                challengeBtn.textContent = 'Find Battle';
-                messageLog.innerHTML = `Welcome to the Hub! Earn $P by battling to buy permanent upgrades!`;
             });
             socket.on('updatePlayerState', (newPlayerState) => { playerState = newPlayerState; renderHubUI(); });
-            socket.on('gameStart', (newGameState) => { gameState = newGameState; switchUI('pvpBattle'); renderBattleUI(); });
+            socket.on('gameStart', (newGameState) => { gameState = newGameState; switchUI('pvpBattle'); renderBattleUI(); messageLog.innerHTML = `A challenger appears! Battle Start!`; });
             socket.on('updateGameState', (newGameState) => { gameState = newGameState; renderBattleUI(); });
-            socket.on('logMessage', (msg) => {
-                if(uiState.includes('Battle')) { messageLog.innerHTML = msg; }
-                else { /* In Hub, maybe show a temporary popup instead */ }
-            });
+            socket.on('logMessage', (msg) => { messageLog.innerHTML = msg; });
             socket.on('promptChoice', ({ title, choices, type }) => { showChoiceModal(title, choices, type); });
             socket.on('updateMap', (data) => { mapData = data; drawMap(); });
+            socket.on('updateQueueStatus', ({ inQueue }) => {
+                challengeBtn.disabled = inQueue;
+                challengeBtn.textContent = inQueue ? 'Waiting...' : 'Find Battle';
+            });
             socket.on('opponentDisconnected', () => { alert("Opponent disconnected. Returning to Hub."); enterHubMode(selfId); });
             
-            challengeBtn.addEventListener('click', () => {
-                socket.emit('enterChallengeQueue');
-                challengeBtn.disabled = true;
-                challengeBtn.textContent = 'Waiting...';
-            });
-            shopBtn.addEventListener('click', showShopModal);
+            challengeBtn.addEventListener('click', () => socket.emit('enterChallengeQueue'));
+            shopBtn.addEventListener('click', () => { /* Add shop modal logic here */ });
             
             window.addEventListener('keydown', (e) => {
                 if (uiState !== 'hub') return;
@@ -175,7 +224,7 @@
                 if (['e', 'enter'].includes(key)) {
                     const tile = mapData.grid[mapData.location.y][mapData.location.x];
                     if (tile === 4) challengeBtn.click();
-                    if (tile === 5) showShopModal();
+                    if (tile === 5) { /* Add shop modal logic here */ }
                     if (tile === 6) socket.emit('healParty');
                 }
                 if (['w', 'a', 's', 'd'].includes(key)) {
@@ -186,4 +235,3 @@
     </script>
 </body>
 </html>
-
