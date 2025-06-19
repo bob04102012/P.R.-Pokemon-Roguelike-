@@ -11,7 +11,7 @@ const io = new Server(server);
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 
-// --- Game Constants & Data ---
+// --- Game Constants & Data (Identical to before) ---
 const POKEMON_PREFIXES = ['Aero', 'Aqua', 'Blaze', 'Geo', 'Cryo', 'Draco', 'Electro', 'Psy', 'Umbra', 'Lumi'];
 const POKEMON_SUFFIXES = ['don', 'zor', 'wing', 'fang', 'dillo', 'moth', 'lyte', 'nix', 'gon', 'leon'];
 const MOVE_PREFIXES = ['Hyper', 'Giga', 'Sonic', 'Psycho', 'Shadow', 'Aqua', 'Inferno', 'Terra', 'Glacial'];
@@ -43,13 +43,11 @@ function generatePokemon(upgrades = { baseHp: 0, baseAtk: 0, betterMons: false }
 const worldMaps = new Map();
 function generateMap(mapX, mapY) {
     const grid = Array(MAP_HEIGHT).fill(0).map(() => Array(MAP_WIDTH).fill(0));
-    for (let i = 0; i < 40; i++) { grid[Math.floor(Math.random() * MAP_HEIGHT)][Math.floor(Math.random() * MAP_WIDTH)] = 1; } // Trees
-    for (let i = 0; i < 30; i++) { grid[Math.floor(Math.random() * MAP_HEIGHT)][Math.floor(Math.random() * MAP_WIDTH)] = 2; } // Water
-    for (let i = 0; i < 50; i++) { grid[Math.floor(Math.random() * MAP_HEIGHT)][Math.floor(Math.random() * MAP_WIDTH)] = 3; } // Grass
+    for (let i = 0; i < 40; i++) { grid[Math.floor(Math.random() * MAP_HEIGHT)][Math.floor(Math.random() * MAP_WIDTH)] = 1; }
+    for (let i = 0; i < 30; i++) { grid[Math.floor(Math.random() * MAP_HEIGHT)][Math.floor(Math.random() * MAP_WIDTH)] = 2; }
+    for (let i = 0; i < 50; i++) { grid[Math.floor(Math.random() * MAP_HEIGHT)][Math.floor(Math.random() * MAP_WIDTH)] = 3; }
     if (mapX === 0 && mapY === 0) {
-        grid[7][8] = 4;  // Challenge Shrine
-        grid[7][10] = 5; // Poké Mart
-        grid[7][12] = 6; // Poké Center
+        grid[7][8] = 4; grid[7][10] = 5; grid[7][12] = 6;
     }
     return grid;
 }
@@ -58,16 +56,7 @@ const playerStates = {};
 const gameRooms = {};
 
 function createPlayerState(socketId) {
-    playerStates[socketId] = {
-        id: socketId,
-        state: 'hub',
-        party: [],
-        currency: 0,
-        upgrades: { baseHp: 0, baseAtk: 0, betterMons: false, purchased: [] },
-        location: { mapX: 0, mapY: 0, x: 9, y: 8 },
-        encounterTimer: null
-    };
-    // Give player a fresh team when they first join
+    playerStates[socketId] = { id: socketId, state: 'hub', party: [], currency: 0, upgrades: { baseHp: 0, baseAtk: 0, betterMons: false, purchased: [] }, location: { mapX: 0, mapY: 0, x: 9, y: 8 }, encounterTimer: null };
     playerStates[socketId].party = [generatePokemon(), generatePokemon(), generatePokemon()];
 }
 
@@ -109,7 +98,6 @@ io.on('connection', (socket) => {
             
             io.sockets.sockets.get(opponentId).join(roomId);
             socket.join(roomId);
-
             io.to(roomId).emit('gameStart', gameState);
         }
     });
@@ -177,13 +165,13 @@ io.on('connection', (socket) => {
     socket.on('buyUpgrade', (upgradeId) => {
         const pState = playerStates[socket.id];
         const upgrade = PERMANENT_UPGRADES[upgradeId];
-        if (pState.currency >= upgrade.cost && !pState.upgrades.purchased.includes(upgradeId)) {
+        if (pState && pState.currency >= upgrade.cost && !pState.upgrades.purchased.includes(upgradeId)) {
             pState.currency -= upgrade.cost;
             pState.upgrades.purchased.push(upgradeId);
             upgrade.apply(pState);
-            pState.party = pState.party.map(p => generatePokemon(pState.upgrades)); // Regenerate team with upgrades
+            pState.party = [generatePokemon(pState.upgrades), generatePokemon(pState.upgrades), generatePokemon(pState.upgrades)];
             io.to(socket.id).emit('updatePlayerState', pState);
-            io.to(socket.id).emit('logMessage', `Purchased ${upgrade.name}! Your team has been updated.`);
+            io.to(socket.id).emit('logMessage', `Purchased ${upgrade.name}! Your team has been upgraded.`);
         }
     });
 
@@ -197,25 +185,19 @@ io.on('connection', (socket) => {
     socket.on('move', ({ direction }) => {
         const pState = playerStates[socket.id];
         if (!pState || pState.state !== 'hub') return;
-
         let { mapX, mapY, x, y } = pState.location;
         const newLoc = { mapX, mapY, x, y };
-
         if (direction === 'w') newLoc.y--; if (direction === 's') newLoc.y++;
         if (direction === 'a') newLoc.x--; if (direction === 'd') newLoc.x++;
-
         if (newLoc.x < 0) { newLoc.mapX--; newLoc.x = MAP_WIDTH - 1; }
         if (newLoc.x >= MAP_WIDTH) { newLoc.mapX++; newLoc.x = 0; }
         if (newLoc.y < 0) { newLoc.mapY--; newLoc.y = MAP_HEIGHT - 1; }
         if (newLoc.y >= MAP_HEIGHT) { newLoc.mapY++; newLoc.y = 0; }
-        
         const mapKey = `${newLoc.mapX},${newLoc.mapY}`;
         if (!worldMaps.has(mapKey)) { worldMaps.set(mapKey, generateMap(newLoc.mapX, newLoc.mapY)); }
         const currentMap = worldMaps.get(mapKey);
-        
         const tile = currentMap[newLoc.y][newLoc.x];
-        if (tile === 1 || tile === 2) return; // Collision
-
+        if (tile === 1 || tile === 2) return;
         pState.location = newLoc;
         io.to(socket.id).emit('updateMap', { location: pState.location, mapGrid: currentMap });
     });
