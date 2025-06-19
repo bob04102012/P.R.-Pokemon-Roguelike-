@@ -60,14 +60,25 @@ const gameRooms = {};
 function createPlayerState(socketId) {
     playerStates[socketId] = {
         id: socketId,
-        state: 'hub', // hub, waiting_for_run, in_pvp_battle, wild_battle
+        state: 'hub',
         party: [],
         currency: 0,
         upgrades: { baseHp: 0, baseAtk: 0, betterMons: false, purchased: [] },
         location: { mapX: 0, mapY: 0, x: 9, y: 8 },
         encounterTimer: null
     };
+    // Give player a fresh team when they first join
     playerStates[socketId].party = [generatePokemon(), generatePokemon(), generatePokemon()];
+}
+
+function enterHubMode(socketId) {
+    const pState = playerStates[socketId];
+    if (!pState) return;
+    pState.state = 'hub';
+    const { mapX, mapY } = pState.location;
+    const mapKey = `${mapX},${mapY}`;
+    if (!worldMaps.has(mapKey)) { worldMaps.set(mapKey, generateMap(mapX, mapY)); }
+    io.to(socketId).emit('enterHubMode', { location: pState.location, mapGrid: worldMaps.get(mapKey), playerState: pState });
 }
 
 io.on('connection', (socket) => {
@@ -77,6 +88,7 @@ io.on('connection', (socket) => {
 
     socket.on('enterChallengeQueue', () => {
         const pState = playerStates[socket.id];
+        if (pState.state !== 'hub') return;
         pState.state = 'waiting_for_run';
         io.to(socket.id).emit('logMessage', 'Waiting for another challenger...');
         
@@ -86,8 +98,9 @@ io.on('connection', (socket) => {
             const p1State = playerStates[opponentId];
             const p2State = playerStates[socket.id];
             
-            p1State.state = 'in_pvp_battle';
-            p2State.state = 'in_pvp_battle';
+            p1State.state = 'in_pvp_battle'; p1State.roomId = roomId;
+            p2State.state = 'in_pvp_battle'; p2State.roomId = roomId;
+            
             p1State.party.forEach(p => { p.currentHp = p.maxHp; p.isFainted = false; });
             p2State.party.forEach(p => { p.currentHp = p.maxHp; p.isFainted = false; });
             
@@ -98,20 +111,67 @@ io.on('connection', (socket) => {
             socket.join(roomId);
 
             io.to(roomId).emit('gameStart', gameState);
-            io.to(roomId).emit('logMessage', `A challenger appears! Battle Start!`);
         }
     });
 
     socket.on('chooseMove', ({ moveIndex }) => {
-        // ... Battle logic remains largely the same, but outcome is different ...
-        // On battle loss:
-        // winnerState.currency += 100;
-        // loserState.currency += 25;
-        // io.to(winnerId).emit('updateCurrency', winnerState.currency);
-        // io.to(winnerId).emit('logMessage', 'You won! You earned $P100. Find the shrine to battle again.');
-        // enterHubMode(winnerId);
-        // enterHubMode(loserId);
-        // delete gameRooms[roomId];
+        const pState = playerStates[socket.id];
+        if (!pState || !pState.roomId || !gameRooms[pState.roomId]) return;
+        const room = gameRooms[pState.roomId];
+        if (room.phase !== 'battle') return;
+
+        const attackerKey = room.turn;
+        if (room.players[attackerKey].id !== socket.id) return;
+        const defenderKey = attackerKey === 'player1' ? 'player2' : 'player1';
+        const attacker = room.players[attackerKey].party[room.players[attackerKey].activePokemonIndex];
+        const defender = room.players[defenderKey].party[room.players[defenderKey].activePokemonIndex];
+        const move = attacker.moves[moveIndex];
+
+        let damage = (move.power * (attacker.attack / defender.defense)) * (Math.random() * 0.3 + 0.85);
+        let effectivenessText = '';
+        if (TYPE_CHART[move.type].strongAgainst.includes(defender.type)) { damage *= 2; effectivenessText = " It's super effective!"; }
+        if (TYPE_CHART[move.type].weakTo.includes(defender.type)) { damage *= 0.5; effectivenessText = " It's not very effective..."; }
+        defender.currentHp = Math.max(0, defender.currentHp - damage);
+
+        io.to(room.roomId).emit('logMessage', `${attacker.name} used ${move.name}! It dealt ${Math.floor(damage)} damage.${effectivenessText}`);
+        
+        if (defender.currentHp <= 0) {
+            defender.isFainted = true;
+            room.phase = 'fainted';
+            io.to(room.roomId).emit('updateGameState', room);
+            io.to(room.roomId).emit('logMessage', `${defender.name} fainted!`);
+
+            setTimeout(() => {
+                const remainingPokemon = room.players[defenderKey].party.filter(p => !p.isFainted);
+                if (remainingPokemon.length === 0) {
+                    const winnerId = room.players[attackerKey].id;
+                    const loserId = room.players[defenderKey].id;
+                    playerStates[winnerId].currency += 100;
+                    playerStates[loserId].currency += 25;
+                    enterHubMode(winnerId);
+                    enterHubMode(loserId);
+                    delete gameRooms[room.roomId];
+                } else {
+                    io.to(room.players[defenderKey].id).emit('promptChoice', { title: 'Choose your next Pokémon!', choices: remainingPokemon, type: 'forceSwitch' });
+                }
+            }, 2000);
+        } else {
+            room.turn = defenderKey;
+            io.to(room.roomId).emit('updateGameState', room);
+        }
+    });
+
+    socket.on('switchPokemon', ({ pokemonIndex }) => {
+        const pState = playerStates[socket.id];
+        if (!pState || !pState.roomId || !gameRooms[pState.roomId]) return;
+        const room = gameRooms[pState.roomId];
+        const playerKey = room.players.player1.id === socket.id ? 'player1' : 'player2';
+        room.players[playerKey].activePokemonIndex = pokemonIndex;
+        if (room.phase === 'fainted') {
+            room.phase = 'battle';
+            room.turn = playerKey === 'player1' ? 'player2' : 'player1';
+        }
+        io.to(room.roomId).emit('updateGameState', room);
     });
 
     socket.on('buyUpgrade', (upgradeId) => {
@@ -121,8 +181,9 @@ io.on('connection', (socket) => {
             pState.currency -= upgrade.cost;
             pState.upgrades.purchased.push(upgradeId);
             upgrade.apply(pState);
+            pState.party = pState.party.map(p => generatePokemon(pState.upgrades)); // Regenerate team with upgrades
             io.to(socket.id).emit('updatePlayerState', pState);
-            io.to(socket.id).emit('logMessage', `Purchased ${upgrade.name}!`);
+            io.to(socket.id).emit('logMessage', `Purchased ${upgrade.name}! Your team has been updated.`);
         }
     });
 
@@ -132,18 +193,42 @@ io.on('connection', (socket) => {
         io.to(socket.id).emit('updatePlayerState', pState);
         io.to(socket.id).emit('logMessage', "Your Pokémon are fully healed!");
     });
-
-    function enterHubMode(socketId) {
-        const pState = playerStates[socketId];
-        if (!pState) return;
-        pState.state = 'hub';
-        const { mapX, mapY } = pState.location;
-        const mapKey = `${mapX},${mapY}`;
-        if (!worldMaps.has(mapKey)) { worldMaps.set(mapKey, generateMap(mapX, mapY)); }
-        io.to(socketId).emit('enterHubMode', { location: pState.location, mapGrid: worldMaps.get(mapKey), playerState: pState });
-    }
     
-    // ... other socket listeners like move, switchPokemon, disconnect ...
+    socket.on('move', ({ direction }) => {
+        const pState = playerStates[socket.id];
+        if (!pState || pState.state !== 'hub') return;
+
+        let { mapX, mapY, x, y } = pState.location;
+        const newLoc = { mapX, mapY, x, y };
+
+        if (direction === 'w') newLoc.y--; if (direction === 's') newLoc.y++;
+        if (direction === 'a') newLoc.x--; if (direction === 'd') newLoc.x++;
+
+        if (newLoc.x < 0) { newLoc.mapX--; newLoc.x = MAP_WIDTH - 1; }
+        if (newLoc.x >= MAP_WIDTH) { newLoc.mapX++; newLoc.x = 0; }
+        if (newLoc.y < 0) { newLoc.mapY--; newLoc.y = MAP_HEIGHT - 1; }
+        if (newLoc.y >= MAP_HEIGHT) { newLoc.mapY++; newLoc.y = 0; }
+        
+        const mapKey = `${newLoc.mapX},${newLoc.mapY}`;
+        if (!worldMaps.has(mapKey)) { worldMaps.set(mapKey, generateMap(newLoc.mapX, newLoc.mapY)); }
+        const currentMap = worldMaps.get(mapKey);
+        
+        const tile = currentMap[newLoc.y][newLoc.x];
+        if (tile === 1 || tile === 2) return; // Collision
+
+        pState.location = newLoc;
+        io.to(socket.id).emit('updateMap', { location: pState.location, mapGrid: currentMap });
+    });
+
+    socket.on('disconnect', () => {
+        console.log('User disconnected:', socket.id);
+        const pState = playerStates[socket.id];
+        if (pState && pState.roomId && gameRooms[pState.roomId]) {
+            io.to(pState.roomId).emit('opponentDisconnected');
+            delete gameRooms[pState.roomId];
+        }
+        delete playerStates[socket.id];
+    });
 });
 
 const PORT = process.env.PORT || 3000;
