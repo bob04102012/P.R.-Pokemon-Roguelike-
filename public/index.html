@@ -16,11 +16,11 @@
         .main-card{border:4px solid var(--border-color);padding:15px;background:white}.main-card img {width:96px; height:96px; image-rendering:pixelated; margin: 10px auto; display: block; border: 2px solid #333; background: #eee;}
         .pokemon-name{font-size:16px;margin-bottom:10px;min-height:20px;}.health-bar-container{width:100%;height:18px;background-color:#e0e0e0;border:2px solid var(--border-color);margin-bottom:5px}.health-bar{height:100%;background-color:#4CAF50;width:100%;transition:width .5s ease-in-out}.hp-text{font-size:10px;text-align:right;margin-bottom:10px}
         .moves-container button { width: calc(50% - 4px); padding: 8px; margin: 2px; font-family: var(--main-font); font-size: 10px; cursor: pointer; border: 2px solid var(--border-color); }
-        #message-log-container { position: fixed; bottom: 0; left: 0; width: 100%; display:flex; justify-content: center; }
-        #message-log{padding:15px;background:white;border:4px solid var(--border-color);min-height:60px;text-align:left;line-height:1.5;max-width:900px;width:100%;box-sizing:border-box;}
+        #message-log-container { position: fixed; bottom: 0; left: 0; width: 100%; display:flex; justify-content: center; z-index: 10; pointer-events: none; }
+        #message-log{padding:15px;background:rgba(255,255,255,0.9);border:4px solid var(--border-color);min-height:60px;text-align:left;line-height:1.5;max-width:900px;width:100%;box-sizing:border-box;pointer-events: all;}
         #hub-container { position: relative; width: 800px; height: 600px; margin: auto; border: 4px solid #333; }
         #map-canvas { background-color: #5a8d3c; image-rendering: pixelated; width: 100%; height: 100%; }
-        .hub-overlay { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6); color: white; padding: 10px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; width: calc(100% - 40px); }
+        .hub-overlay { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6); color: white; padding: 10px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; width: calc(100% - 40px); box-sizing: border-box;}
         .hub-overlay button { font-family: var(--main-font); font-size: 12px; margin-left: 20px; cursor: pointer;}
         #hub-party-display { position: absolute; bottom: 10px; left: 10px; display: flex; gap: 5px; background: rgba(0,0,0,0.6); padding: 5px; border-radius: 5px; }
         #modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99;display:flex;justify-content:center;align-items:center}.modal-content{background:white;padding:30px;border:4px solid var(--border-color);max-width:80%;width:700px;max-height:80vh;overflow-y:auto;}
@@ -28,6 +28,7 @@
         .choice-card{border:3px solid var(--border-color);padding:15px;cursor:pointer;transition:all .2s ease;display:flex;justify-content:space-between;align-items:center;}.choice-card:hover{background-color:#eee}
         .choice-card.disabled { background-color: #d3d3d3; color: #888; cursor: not-allowed; }
         .upgrade-info p { margin: 0; font-size: 10px; line-height: 1.4; }
+        .upgrade-level { font-size: 10px; color: #555; }
     </style>
 </head>
 <body>
@@ -75,14 +76,13 @@
             <div id="choices-container"></div>
         </div>
     </div>
-    
+
     <div id="message-log-container">
         <div id="message-log">Connecting to the server...</div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // Wrap entire script in DOMContentLoaded to prevent errors
         document.addEventListener('DOMContentLoaded', function() {
             const socket = io();
 
@@ -104,7 +104,7 @@
             // --- Client State ---
             let selfId = null, gameState = null, uiState = 'hub', mapData = { location: null, grid: null }, playerState = null;
 
-            // --- Image Generation Canvas ---
+            // --- Image Generation ---
             const spriteCanvas = document.createElement('canvas');
             spriteCanvas.width = 8; spriteCanvas.height = 8;
             function generatePokemonImage(name) {
@@ -116,13 +116,13 @@
             function switchUI(state) {
                 uiState = state;
                 [battleUI, hubUI].forEach(el => el.classList.add('hidden'));
-                if (state.includes('Battle')) battleUI.classList.remove('hidden');
+                if (state === 'in_pvp_battle') battleUI.classList.remove('hidden');
                 if (state === 'hub') hubUI.classList.remove('hidden');
             }
 
             const TILE_COLORS = { 0: '#7bb764', 1: '#4a3d2a', 2: '#5b98de', 3: '#4e8538', 4: 'var(--shrine-color)', 5: 'var(--mart-color)', 6: 'var(--center-color)' };
             function drawMap() {
-                if (!mapData.grid) return;
+                if (!mapData.grid || !mapCtx) return;
                 mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
                 for (let y = 0; y < mapData.grid.length; y++) { for (let x = 0; x < mapData.grid[0].length; x++) { mapCtx.fillStyle = TILE_COLORS[mapData.grid[y][x]]; mapCtx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE); } }
                 if (mapData.location) { mapCtx.fillStyle = '#ff0000'; mapCtx.fillRect(mapData.location.x * TILE_SIZE + 10, mapData.location.y * TILE_SIZE + 10, TILE_SIZE - 20, TILE_SIZE - 20); }
@@ -141,10 +141,92 @@
                 });
             }
             
-            function renderBattleUI() { /* Identical to previous version */ }
-            function renderPlayerArea(prefix, playerData, isMyTurn) { /* Identical to previous version */ }
-            function showChoiceModal(title, choices, type) { /* Identical to previous version */ }
-            function showShopModal(shopData) { /* Identical to previous version */ }
+            function renderBattleUI() {
+                if (!gameState) return;
+                const selfKey = gameState.players.player1.id === selfId ? 'player1' : 'player2';
+                const opponentKey = selfKey === 'player1' ? 'player2' : 'player1';
+                renderPlayerArea('self', gameState.players[selfKey], selfKey === gameState.turn);
+                renderPlayerArea('opponent', gameState.players[opponentKey], false);
+            }
+
+            function renderPlayerArea(prefix, playerData, isMyTurn) {
+                const partyDisplay = document.getElementById(`${prefix}-party-display`);
+                partyDisplay.innerHTML = '';
+                if (!playerData || !playerData.party) return;
+                playerData.party.forEach((mon, index) => {
+                    const monDiv = document.createElement('div');
+                    monDiv.className = 'party-mon';
+                    monDiv.innerHTML = `<img src="${generatePokemonImage(mon.name)}" title="${mon.name}"/>`;
+                    if (index === playerData.activePokemonIndex) monDiv.classList.add('active');
+                    if (mon.isFainted) monDiv.classList.add('fainted');
+                    partyDisplay.appendChild(monDiv);
+                });
+                if (playerData.party.length === 0) return;
+                const activeMon = playerData.party[playerData.activePokemonIndex];
+                if (!activeMon) return;
+                document.getElementById(`${prefix}-pokemon-name`).textContent = activeMon.name;
+                document.getElementById(`${prefix}-pokemon-img`).src = generatePokemonImage(activeMon.name);
+                document.getElementById(`${prefix}-health-bar`).style.width = `${(activeMon.currentHp / activeMon.maxHp) * 100}%`;
+                document.getElementById(`${prefix}-hp-text`).textContent = `${Math.ceil(activeMon.currentHp)} / ${activeMon.maxHp}`;
+                const movesContainer = document.getElementById(`${prefix}-moves`);
+                if (prefix === 'self' && movesContainer) {
+                    movesContainer.innerHTML = '';
+                    if (!activeMon.isFainted) {
+                        activeMon.moves.forEach((move, i) => {
+                            const btn = document.createElement('button');
+                            btn.textContent = move.name;
+                            btn.title = `Power: ${move.power} | Type: ${move.type}`;
+                            btn.disabled = !isMyTurn || gameState.phase !== 'battle';
+                            btn.onclick = () => socket.emit('chooseMove', { moveIndex: i });
+                            movesContainer.appendChild(btn);
+                        });
+                    }
+                }
+            }
+            
+            function showChoiceModal(title, choices, type) {
+                modalOverlay.classList.remove('hidden');
+                modalTitle.textContent = title;
+                choicesContainer.innerHTML = '';
+                choices.forEach((choice) => {
+                    const card = document.createElement('div');
+                    card.className = 'choice-card';
+                    card.innerHTML = `<img src="${generatePokemonImage(choice.name)}" style="width:96px; height:96px;" /><h3>${choice.name}</h3><p>HP: ${Math.ceil(choice.currentHp)}/${choice.maxHp}</p>`;
+                    card.onclick = () => {
+                        if (type === 'forceSwitch') {
+                            const selfKey = gameState.players.player1.id === selfId ? 'player1' : 'player2';
+                            const originalIndex = gameState.players[selfKey].party.findIndex(p => p.name === choice.name && !p.isFainted);
+                            if (originalIndex !== -1) socket.emit('switchPokemon', { pokemonIndex: originalIndex });
+                        }
+                        modalOverlay.classList.add('hidden');
+                    };
+                    choicesContainer.appendChild(card);
+                });
+            }
+
+            function showShopModal(shopData) {
+                modalOverlay.classList.remove('hidden');
+                modalTitle.textContent = "Poké Mart - Permanent Upgrades";
+                choicesContainer.innerHTML = '';
+                for (const id in shopData.upgrades) {
+                    const upgrade = shopData.upgrades[id];
+                    const currentLevel = playerState.upgrades.levels[id] || 0;
+                    const isOneTime = id === 'scouting';
+                    const cost = Math.floor(upgrade.baseCost * Math.pow(1.5, currentLevel));
+                    const card = document.createElement('div');
+                    card.className = 'choice-card';
+                    let levelText = isOneTime ? (currentLevel > 0 ? '(Purchased)' : '') : `(Level ${currentLevel})`;
+                    card.innerHTML = `<div class="upgrade-info"><h3>${upgrade.name} <span class="upgrade-level">${levelText}</span></h3><p>${upgrade.description}</p></div><div class="upgrade-cost">$P ${cost}</div>`;
+                    if ((isOneTime && currentLevel > 0) || playerState.currency < cost) { card.classList.add('disabled'); } 
+                    else { card.onclick = () => { socket.emit('buyUpgrade', id); modalOverlay.classList.add('hidden'); }; }
+                    choicesContainer.appendChild(card);
+                }
+                const closeBtn = document.createElement('button');
+                closeBtn.textContent = 'Close';
+                closeBtn.style.marginTop = '20px';
+                closeBtn.onclick = () => modalOverlay.classList.add('hidden');
+                choicesContainer.appendChild(closeBtn);
+            }
 
             // --- Socket Event Listeners ---
             socket.on('connect', () => { selfId = socket.id; });
@@ -156,10 +238,10 @@
                 drawMap();
                 challengeBtn.disabled = false;
                 challengeBtn.textContent = 'Find Battle';
-                messageLog.innerHTML = `Welcome to the Hub! Press 'E' on special tiles to interact.`;
+                messageLog.innerHTML = `Welcome! Press 'E' on special tiles to interact.`;
             });
             socket.on('updatePlayerState', (newPlayerState) => { playerState = newPlayerState; renderHubUI(); });
-            socket.on('gameStart', (newGameState) => { gameState = newGameState; switchUI('pvpBattle'); renderBattleUI(); messageLog.innerHTML = `A challenger appears! Battle Start!`; });
+            socket.on('gameStart', (newGameState) => { gameState = newGameState; switchUI('in_pvp_battle'); renderBattleUI(); messageLog.innerHTML = `A challenger appears! Battle Start!`; });
             socket.on('updateGameState', (newGameState) => { gameState = newGameState; renderBattleUI(); });
             socket.on('logMessage', (msg) => { messageLog.innerHTML = msg; });
             socket.on('promptChoice', ({ title, choices, type }) => { showChoiceModal(title, choices, type); });
@@ -171,8 +253,7 @@
             socket.on('shopData', (data) => { showShopModal(data); });
             socket.on('opponentDisconnected', () => {
                 alert("Opponent disconnected. Returning to Hub.");
-                // We don't reload, we ask the server to put us back in the hub
-                socket.emit('requestHubState');
+                enterHubMode(selfId); // This function now correctly resets the client state
             });
             
             // --- Input Listeners ---
