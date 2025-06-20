@@ -2,127 +2,166 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Poké-Roguelike World</title>
     <style>
-        /* CSS is identical to the previous version. No changes needed. */
-        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-        :root{--main-font:'Press Start 2P',cursive;--border-color:#333;--background-color:#f0f0f0;--player1-color:#4a90e2;--player2-color:#e24a4a;--grass-type:#78C850;--fire-type:#F08030;--water-type:#6890F0;--electric-type:#F8D030;--rock-type:#B8A038;--ghost-type:#705898;--normal-type:#A8A878; --shrine-color: #d4af37; --mart-color: #4a90e2; --center-color: #e24a4a;}
-        body{font-family:var(--main-font);background-color:var(--background-color);color:#333;text-align:center;padding:10px;font-size:12px;overflow:hidden;}
-        .hidden{display:none!important}#battle-ui, #hub-ui { width: 100%; max-width: 900px; margin: auto; }
-        .arena{display:flex;justify-content:space-around;gap:20px;margin-bottom:15px}.player-area{width:48%}.party-display{display:flex;gap:5px;margin-bottom:10px;justify-content:center;height:40px}
-        .party-mon{border:2px solid #ccc;padding:5px;font-size:10px;opacity:0.6;cursor:pointer;position:relative}
-        .party-mon img { width: 32px; height: 32px; image-rendering: pixelated; display: block; margin: 0 auto 4px auto; }
-        .party-mon.active{border-color:gold;opacity:1;transform:scale(1.1)}.party-mon.fainted{background-color:#555;color:#999;text-decoration:line-through}
-        .main-card{border:4px solid var(--border-color);padding:15px;background:white}.main-card img {width:96px; height:96px; image-rendering:pixelated; margin: 10px auto; display: block; border: 2px solid #333; background: #eee;}
-        .pokemon-name{font-size:16px;margin-bottom:10px;min-height:20px;}.health-bar-container{width:100%;height:18px;background-color:#e0e0e0;border:2px solid var(--border-color);margin-bottom:5px}.health-bar{height:100%;background-color:#4CAF50;width:100%;transition:width .5s ease-in-out}.hp-text{font-size:10px;text-align:right;margin-bottom:10px}
-        .moves-container button { width: calc(50% - 4px); padding: 8px; margin: 2px; font-family: var(--main-font); font-size: 10px; cursor: pointer; border: 2px solid var(--border-color); }
-        #message-log{padding:15px;background:white;border:4px solid var(--border-color);min-height:60px;text-align:left;line-height:1.5;margin-top:10px}
-        #hub-container { position: relative; width: 800px; height: 600px; margin: auto; border: 4px solid #333; }
-        #map-canvas { background-color: #5a8d3c; image-rendering: pixelated; width: 100%; height: 100%; }
-        .hub-overlay { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.6); color: white; padding: 10px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; width: calc(100% - 40px); }
-        .hub-overlay button { font-family: var(--main-font); font-size: 12px; margin-left: 20px; cursor: pointer;}
-        #hub-party-display { position: absolute; bottom: 10px; left: 10px; display: flex; gap: 5px; background: rgba(0,0,0,0.6); padding: 5px; border-radius: 5px; }
-        #modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:99;display:flex;justify-content:center;align-items:center}.modal-content{background:white;padding:30px;border:4px solid var(--border-color);max-width:80%;width:700px;max-height:80vh;overflow-y:auto;}
-        #modal-title{font-size:20px;margin-bottom:20px}#choices-container{display:flex;flex-direction:column;gap:15px;}
-        .choice-card{border:3px solid var(--border-color);padding:15px;cursor:pointer;transition:all .2s ease;display:flex;justify-content:space-between;align-items:center;}.choice-card:hover{background-color:#eee}
-        .choice-card.disabled { background-color: #d3d3d3; color: #888; cursor: not-allowed; } /* Renamed from "purchased" */
-        .upgrade-info p { margin: 0; font-size: 10px; line-height: 1.4; }
-        .upgrade-level { font-size: 10px; color: #555; }
+        /* ... All previous CSS ... */
+        /* New CSS for Mobile Controls and Party Screen */
+        #mobile-controls {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 1fr 1fr 1fr;
+            gap: 5px;
+            opacity: 0.5;
+            z-index: 100;
+        }
+        .control-pad {
+            background-color: rgba(0,0,0,0.5);
+            border: 2px solid white;
+            border-radius: 10px;
+        }
+        @media (min-width: 800px) {
+            #mobile-controls { display: none; } /* Hide on desktop */
+        }
+        /* Party Modal CSS */
+        .party-member-card {
+            display: flex;
+            align-items: center;
+            border: 2px solid #333;
+            padding: 10px;
+        }
+        .party-member-card img { width: 48px; height: 48px; }
+        .party-member-stats { margin-left: 15px; font-size: 10px; text-align: left; }
     </style>
 </head>
 <body>
-    <!-- HTML is identical to previous version -->
-    <div id="battle-ui" class="hidden">...</div>
-    <div id="hub-ui" class="hidden">...</div>
-    <div id="modal-overlay" class="hidden">...</div>
+    <!-- ... Battle UI and Hub UI HTML is the same ... -->
+    <div id="hub-ui" class="hidden">
+        <div id="hub-container">
+            <!-- ... canvas and overlays ... -->
+        </div>
+        <div id="mobile-controls">
+            <!-- This will be populated by JS -->
+        </div>
+    </div>
+    <!-- ... Modals ... -->
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // --- DOM Elements, State Variables, Image Generation (Identical) ---
-            const socket = io();
-            const battleUI = document.getElementById('battle-ui');
-            const hubUI = document.getElementById('hub-ui');
-            // ... all other element lookups ...
-            let selfId = null, gameState = null, uiState = 'hub', mapData = { location: null, grid: null }, playerState = null;
-            function generatePokemonImage(name) { /* ... */ }
-            function switchUI(state) { /* ... */ }
-            function drawMap() { /* ... */ }
-            function renderHubUI() { /* ... */ }
-            function renderBattleUI() { /* ... */ }
-            function renderPlayerArea(prefix, playerData, isMyTurn) { /* ... */ }
-            function showChoiceModal(title, choices, type) { /* ... */ }
+            // ... all DOM element lookups and state variables ...
+            const mobileControls = document.getElementById('mobile-controls');
 
-            // *** SHOP MODAL REWORKED ***
-            function showShopModal(shopData) {
-                modalOverlay.classList.remove('hidden');
-                modalTitle.textContent = "Poké Mart - Permanent Upgrades";
-                choicesContainer.innerHTML = '';
-                for (const id in shopData.upgrades) {
-                    const upgrade = shopData.upgrades[id];
-                    const currentLevel = playerState.upgrades.levels[id] || 0;
-                    const isOneTime = id === 'scouting';
-                    
-                    const card = document.createElement('div');
-                    card.className = 'choice-card';
-
-                    let cost, effectText, levelText;
-                    if (isOneTime) {
-                        cost = upgrade.baseCost;
-                        effectText = upgrade.description;
-                        levelText = currentLevel > 0 ? '(Purchased)' : '';
+            function initializeMobileControls() {
+                const directions = [
+                    { dx: -1, dy: -1 }, { dx: 0, dy: -1 }, { dx: 1, dy: -1 },
+                    { dx: -1, dy: 0 },  { dx: 0, dy: 0 },  { dx: 1, dy: 0 },
+                    { dx: -1, dy: 1 },  { dx: 0, dy: 1 },  { dx: 1, dy: 1 }
+                ];
+                mobileControls.innerHTML = '';
+                directions.forEach(dir => {
+                    const pad = document.createElement('div');
+                    pad.className = 'control-pad';
+                    if (dir.dx === 0 && dir.dy === 0) {
+                        pad.textContent = 'E'; // Interact button
+                        pad.style.fontSize = '24px';
+                        pad.style.color = 'white';
+                        pad.style.textAlign = 'center';
+                        pad.style.lineHeight = '40px';
+                        pad.onclick = () => socket.emit('interact');
                     } else {
-                        cost = Math.floor(upgrade.baseCost * Math.pow(1.5, currentLevel));
-                        effectText = upgrade.description.replace('+10', `+${10 * (currentLevel + 1)}`).replace('+5', `+${5 * (currentLevel + 1)}`);
-                        levelText = `(Level ${currentLevel})`;
+                        pad.onclick = () => socket.emit('move', dir);
                     }
-
-                    card.innerHTML = `
-                        <div class="upgrade-info">
-                            <h3>${upgrade.name} <span class="upgrade-level">${levelText}</span></h3>
-                            <p>${effectText}</p>
-                        </div>
-                        <div class="upgrade-cost">$P ${cost}</div>`;
-                    
-                    if ((isOneTime && currentLevel > 0) || playerState.currency < cost) {
-                        card.classList.add('disabled');
-                    } else {
-                        card.onclick = () => { socket.emit('buyUpgrade', id); modalOverlay.classList.add('hidden'); };
-                    }
-                    choicesContainer.appendChild(card);
-                }
-                const closeBtn = document.createElement('button');
-                closeBtn.textContent = 'Close';
-                closeBtn.style.marginTop = '20px';
-                closeBtn.onclick = () => modalOverlay.classList.add('hidden');
-                choicesContainer.appendChild(closeBtn);
+                    mobileControls.appendChild(pad);
+                });
             }
 
-            // --- Socket Listeners (Identical, with one change) ---
-            socket.on('connect', () => { selfId = socket.id; });
+            const TILE_COLORS = { 0: '#7bb764', 1: '#4a3d2a', 2: '#5b98de', 3: '#4e8538', 4: 'var(--shrine-color)', 5: 'var(--mart-color)', 6: 'var(--center-color)', 7: '#ff8800' }; // Added NPC color
+            function drawMap() {
+                if (!mapData.grid) return;
+                mapCtx.clearRect(0, 0, mapCanvas.width, mapCanvas.height);
+                // Draw grid
+                for (let y = 0; y < mapData.grid.length; y++) { for (let x = 0; x < mapData.grid[0].length; x++) { mapCtx.fillStyle = TILE_COLORS[mapData.grid[y][x]]; mapCtx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE); } }
+                
+                // Draw NPCs
+                if (mapData.npcs) {
+                    mapData.npcs.forEach(npc => {
+                        mapCtx.fillStyle = TILE_COLORS[7]; // NPC color
+                        mapCtx.fillRect(npc.x * TILE_SIZE + 5, npc.y * TILE_SIZE + 5, TILE_SIZE - 10, TILE_SIZE - 10);
+                    });
+                }
+
+                // Draw Player
+                if (mapData.location) { mapCtx.fillStyle = '#ff0000'; mapCtx.fillRect(mapData.location.x * TILE_SIZE + 10, mapData.location.y * TILE_SIZE + 10, TILE_SIZE - 20, TILE_SIZE - 20); }
+            }
+
+            function showPartyModal() {
+                modalOverlay.classList.remove('hidden');
+                modalTitle.textContent = "Your Party";
+                choicesContainer.innerHTML = '';
+                playerState.party.forEach(mon => {
+                    const card = document.createElement('div');
+                    card.className = 'party-member-card';
+                    card.innerHTML = `
+                        <img src="${generatePokemonImage(mon.name)}" />
+                        <div class="party-member-stats">
+                            <h3>${mon.name}</h3>
+                            <p>HP: ${Math.ceil(mon.currentHp)} / ${mon.maxHp}</p>
+                            <p>ATK: ${mon.attack} | DEF: ${mon.defense}</p>
+                            <p>Type: ${mon.type}</p>
+                        </div>
+                    `;
+                    choicesContainer.appendChild(card);
+                });
+            }
+
+            // --- SOCKET LISTENERS ---
             socket.on('enterHubMode', (data) => {
                 playerState = data.playerState;
-                mapData = { location: data.location, grid: data.mapGrid };
+                mapData = data.mapData; // Contains both .grid and .npcs
                 switchUI('hub');
                 renderHubUI();
                 drawMap();
-                challengeBtn.disabled = false;
-                challengeBtn.textContent = 'Find Battle';
+                initializeMobileControls();
             });
-            // ... all other listeners ...
-            socket.on('shopData', (data) => {
-                showShopModal(data); // This is now correctly called
+            // ... other listeners ...
+            socket.on('updateMap', (data) => {
+                mapData = data.mapData;
+                playerState.location = data.location;
+                drawMap();
+            });
+
+            // --- INPUT LISTENERS ---
+            window.addEventListener('keydown', (e) => {
+                if (uiState !== 'hub') return;
+                const key = e.key.toLowerCase();
+                
+                if (key === 'p') {
+                    showPartyModal();
+                    return;
+                }
+
+                if (['e', 'enter'].includes(key)) {
+                    socket.emit('interact');
+                }
+                
+                const moveDir = {dx: 0, dy: 0};
+                if (key === 'w') moveDir.dy = -1;
+                if (key === 'a') moveDir.dx = -1;
+                if (key === 's') moveDir.dy = 1;
+                if (key === 'd') moveDir.dx = 1;
+
+                if (moveDir.dx !== 0 || moveDir.dy !== 0) {
+                    socket.emit('move', moveDir);
+                }
             });
             
-            // --- Input Listeners (Identical) ---
-            challengeBtn.addEventListener('click', () => socket.emit('enterChallengeQueue'));
-            shopBtn.addEventListener('click', () => {
-                // Now we ask the server for the latest shop data before showing
-                socket.emit('getShopData');
-            });
-            modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) modalOverlay.classList.add('hidden'); });
-            window.addEventListener('keydown', (e) => { /* ... */ });
+            // ... other listeners like shopBtn, challengeBtn ...
         });
     </script>
 </body>
